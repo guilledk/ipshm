@@ -1,0 +1,36 @@
+{
+  "name": "@guilledk/ipshm",
+  "version": "1.0.0-rc1",
+  "description": "Helpers for posix shared memory & semaphores, based on ffi-napi+libc",
+  "repository": "https://github.com/guilledk/ipshm.git",
+  "author": "Guillermo Rodriguez",
+  "license": "MIT",
+  "main": "./build/index.js",
+  "types": "./build/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./build/index.js"
+    }
+  },
+  "type": "module",
+  "scripts": {
+    "build": "yarn && tsc"
+  },
+  "dependencies": {
+    "ffi-napi": "^4.0.3",
+    "ref-napi": "^3.0.3",
+    "workerpool": "^9.1.0"
+  },
+  "devDependencies": {
+    "@types/chai": "^4.3.11",
+    "@types/chai-as-promised": "^7.1.8",
+    "@types/ffi-napi": "^4.0.10",
+    "@types/mocha": "^10.0.6",
+    "@types/node": "^20.11.16",
+    "@types/ref-napi": "^3.0.12",
+    "chai": "^5.0.3",
+    "chai-as-promised": "^7.1.1",
+    "mocha": "^10.2.0",
+    "typescript": "^5.3.3"
+  }
+}
