@@ -3,7 +3,7 @@ import ref from 'ref-napi';
 import path from "node:path";
 import {fileURLToPath} from "node:url";
 
-import shmLibc from "./libc.js";
+import {libc} from "./libc.js";
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -42,7 +42,7 @@ export class PosixSemaphore {
                 flags |= O_EXCL;
         }
 
-        this.semPtr = shmLibc.sem_open(semName, flags, options.permissions, options.initialValue);
+        this.semPtr = libc.sem_open(semName, flags, options.permissions, options.initialValue);
 
         // Check if sem_open failed
         if (this.semPtr.isNull() || ref.address(this.semPtr) === 0xFFFFFFFF)
@@ -50,28 +50,28 @@ export class PosixSemaphore {
     }
 
     public wait(): void {
-        const result = shmLibc.sem_wait(this.semPtr);
+        const result = libc.sem_wait(this.semPtr);
         if (result !== 0) {
             throw new Error('Failed to wait on semaphore');
         }
     }
 
     public post(): void {
-        const result = shmLibc.sem_post(this.semPtr);
+        const result = libc.sem_post(this.semPtr);
         if (result !== 0) {
             throw new Error('Failed to post semaphore');
         }
     }
 
     public close(): void {
-        const result = shmLibc.sem_close(this.semPtr);
+        const result = libc.sem_close(this.semPtr);
         if (result !== 0) {
             throw new Error('Failed to close semaphore');
         }
     }
 
     public unlink(): void {
-        const result = shmLibc.sem_unlink(this.semName);
+        const result = libc.sem_unlink(this.semName);
         if (result !== 0) {
             throw new Error('Failed to unlink semaphore');
         }

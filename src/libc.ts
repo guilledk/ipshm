@@ -7,7 +7,7 @@ const size_t = ref.types.size_t;
 const key_t = int;
 const mode_t = int;
 
-export const shmLibc = ffi.Library(null, {
+export const libc = ffi.Library(null, {
     shmget: [int, [key_t, size_t, mode_t]],
     shmat: [voidPtr, [int, voidPtr, int]],
     shmdt: [int, [voidPtr]],
@@ -19,4 +19,4 @@ export const shmLibc = ffi.Library(null, {
     sem_unlink: [int, ['string']],
 });
 
-export default shmLibc;
+export function isErrorVoidPtr(val: Buffer): boolean { return ref.address(val) == 0xffffffff; };
