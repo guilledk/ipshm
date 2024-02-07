@@ -87,7 +87,7 @@ export class AsyncPosixSemaphore extends PosixSemaphore {
 
         this.asyncPosixSem = workerpool.pool(
             path.join(currentDir, 'workers/semaphore.js'),
-            {minWorkers: 2, maxWorkers: 2}
+            {minWorkers: 1, maxWorkers: 1}
         );
     }
 
@@ -105,5 +105,17 @@ export class AsyncPosixSemaphore extends PosixSemaphore {
 
     public async stop(): Promise<void> {
         await this.asyncPosixSem.terminate();
+    }
+}
+
+export function maybeDeleteSemaphore(semName: string) {
+    try {
+        const sem = new PosixSemaphore(semName, {create: false});
+        sem.unlink();
+        console.log(`Unlinked semaphore ${semName}`);
+
+    } catch (e) {
+        if (!e.message.includes('Failed to open semaphore'))
+            throw e;
     }
 }

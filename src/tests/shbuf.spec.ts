@@ -1,16 +1,13 @@
 import {expect} from "chai";
-import path from "node:path";
-import {fileURLToPath} from "node:url";
 
 import {maybeDeleteSharedBuffer, SharedBuffer} from "../shbuf.js";
-import {runCommand} from "../utils.js";
 
-const currentDir = path.dirname(fileURLToPath(import.meta.url));
-const helperScript = path.join(currentDir, 'shbuf.helper.js');
 
 async function readBufferInSubprocess(key: number, size: number, readSize: number, offset: number = 0): Promise<string> {
-    return await runCommand(
-        'node', [helperScript, key.toString(), size.toString(), readSize.toString(), offset.toString()]);
+    // @ts-ignore
+    const { SharedBuffer } = await import('../../build/shbuf.js');
+    const buf = new SharedBuffer(key, size, {create: false});
+    return new TextDecoder('utf-8').decode(buf.read(readSize, offset));
 }
 
 describe('SharedBuffer Module', function() {

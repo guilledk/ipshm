@@ -3,19 +3,27 @@ import {Readable, ReadableOptions, Writable, WritableOptions} from 'stream';
 import {BufferOptions, SharedBuffer} from "./shbuf.js";
 
 
-export class IPSharedMemoryWriter extends Writable {
+export class SharedBufferWriteStream extends Writable {
 
     readonly key: number;
     readonly size: number;
     private readonly shmBuffer: SharedBuffer;
+    readonly bufferOptions: BufferOptions;
 
     private writeOffset: number;
 
-    constructor(key: number, size: number, options?: WritableOptions, bufferOptions: BufferOptions = {}) {
+    constructor(key: number, size: number, options?: WritableOptions, bufferOptions?: BufferOptions) {
         super(options);
         this.key = key;
         this.size = size;
-        this.shmBuffer = new SharedBuffer(key, size, bufferOptions);
+
+        this.bufferOptions = bufferOptions ?? {
+            create: true,
+            existOk: true,
+            permissions: 0o644
+        };
+
+        this.shmBuffer = new SharedBuffer(key, size, this.bufferOptions);
     }
 
     _write(chunk: Buffer, encoding: string, callback: (error?: Error | null) => void): void {
@@ -63,11 +71,12 @@ export class IPSharedMemoryWriter extends Writable {
     detach() { this.shmBuffer.detach(); }
 }
 
-export class IPSharedMemoryReader extends Readable {
+export class SharedBufferReadStream extends Readable {
 
     readonly key: number;
     readonly size: number;
     readonly shmBuffer: SharedBuffer;
+    readonly bufferOptions: BufferOptions;
 
     private readOffset: number;
 
@@ -77,19 +86,27 @@ export class IPSharedMemoryReader extends Readable {
         this.key = key;
         this.size = size;
 
-        this.shmBuffer = new SharedBuffer(key, size, bufferOptions);
+        this.bufferOptions = bufferOptions ?? {
+            create: false
+        };
+
+        this.shmBuffer = new SharedBuffer(key, size, this.bufferOptions);
+
+        this.resetReader();
     }
 
     _read(size: number): void {
         try {
             const remainingSize = this.size - this.readOffset;
-            if (remainingSize <= 0)
+            if (remainingSize <= 0) {
+                this.push(null);
                 return;
+            }
 
             const readSize = Math.min(size, remainingSize);
             const data = this.shmBuffer.read(readSize, this.readOffset);
-            this.readOffset += readSize;
             this.push(data);
+            this.readOffset += readSize;
 
         } catch (error) {
             this.emit('error', error instanceof Error ? error : new Error(`Unknown error: ${error}`));
