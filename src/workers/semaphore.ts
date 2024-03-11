@@ -1,15 +1,13 @@
-import workerpool from 'workerpool';
+import { PosixSemaphore } from "../semaphore.js";
+import workerpool from "workerpool";
 
-import {PosixSemaphore} from "../semaphore.js";
-
-
-function semProxyCall(call: string, semName: string, initialValue: number = 1) {
-    const sem = new PosixSemaphore(semName, {initialValue});
+function semInWorker(call: string, semName: string, ...params) {
+    const sem = new PosixSemaphore(semName, {create: false});
 
     if (!(call in sem))
-        throw new Error(`PosixSemaphore class does not have a ${call} method`);
+        throw new Error(`${call} not in PosixSemaphore!`);
 
-    sem[call]();
+    return sem[call](call, ...params);
 }
 
-workerpool.worker({semProxyCall});
+workerpool.worker({semInWorker});

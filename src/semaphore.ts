@@ -1,11 +1,11 @@
 import workerpool from "workerpool";
 import ref from 'ref-napi';
+
 import path from "node:path";
-import {fileURLToPath} from "node:url";
 
 import {libc} from "./libc.js";
+import {BUILD_DIR} from "./utils.js";
 
-const currentDir = path.dirname(fileURLToPath(import.meta.url));
 
 export const O_CREAT = 0o100;
 export const O_EXCL = 0o200;
@@ -15,62 +15,83 @@ export interface SemaphoreOptions {
     create?: boolean;
     existOk?: boolean;
     permissions?: number;
-};
+}
+
+export function getSemPointer(semName: string, options?: SemaphoreOptions) {
+    options.initialValue = options.initialValue ?? 1;
+    options.create = options.create ?? true;
+    options.existOk = options.existOk ?? true;
+    options.permissions = options.permissions ?? 0o666;
+
+    let flags = 0;
+
+    if (options.create) {
+        flags |= O_CREAT;
+
+        if (!options.existOk)
+            flags |= O_EXCL;
+    }
+
+    const semPtr = libc.sem_open(semName, flags, options.permissions, options.initialValue);
+
+    // Check if sem_open failed
+    if (semPtr.isNull() || ref.address(semPtr) === 0xFFFFFFFF)
+        throw new Error(`Failed to open semaphore named ${semName}`);
+
+    return semPtr;
+}
 
 export class PosixSemaphore {
     readonly semName: string;
-    readonly options: SemaphoreOptions;
+    readonly options: SemaphoreOptions = {};
 
     private readonly semPtr: any;
 
-    constructor(semName: string, options: SemaphoreOptions) {
+    constructor(semName: string, options?: SemaphoreOptions) {
         this.semName = semName;
 
-        options.initialValue = options.initialValue ?? 1;
-        options.create = options.create ?? true;
-        options.existOk = options.existOk ?? true;
-        options.permissions = options.permissions ?? 0o666;
+        this.options.initialValue = options.initialValue ?? 1;
+        this.options.create = options.create ?? true;
+        this.options.existOk = options.existOk ?? true;
+        this.options.permissions = options.permissions ?? 0o666;
 
-        this.options = options;
-
-        let flags = 0;
-
-        if (options.create) {
-            flags |= O_CREAT;
-
-            if (!options.existOk)
-                flags |= O_EXCL;
-        }
-
-        this.semPtr = libc.sem_open(semName, flags, options.permissions, options.initialValue);
-
-        // Check if sem_open failed
-        if (this.semPtr.isNull() || ref.address(this.semPtr) === 0xFFFFFFFF)
-            throw new Error('Failed to open semaphore');
+        this.semPtr = getSemPointer(semName, this.options);
     }
 
-    public wait(): void {
+    wait(): void {
         const result = libc.sem_wait(this.semPtr);
         if (result !== 0) {
             throw new Error('Failed to wait on semaphore');
         }
     }
 
-    public post(): void {
+    getvalue(): number {
+        const valuePtr = ref.alloc('int');
+        const result = libc.sem_getvalue(this.semPtr, valuePtr);
+
+        if (result === 0) {
+            return valuePtr.deref();
+        } else {
+            const error = new Error(`Failed to get semaphore value, errno: ${result}`);
+            throw error;
+        }
+    }
+
+    post(): void {
         const result = libc.sem_post(this.semPtr);
         if (result !== 0) {
             throw new Error('Failed to post semaphore');
         }
     }
 
-    public close(): void {
+    close(): void {
         const result = libc.sem_close(this.semPtr);
         if (result !== 0) {
             throw new Error('Failed to close semaphore');
         }
     }
 
-    public unlink(): void {
+    unlink(): void {
         const result = libc.sem_unlink(this.semName);
         if (result !== 0) {
             throw new Error('Failed to unlink semaphore');
@@ -79,32 +100,38 @@ export class PosixSemaphore {
 }
 
 export class AsyncPosixSemaphore extends PosixSemaphore {
+    private _semWorker: any;
 
-    private asyncPosixSem: any;
-
-    constructor(semName: string, options: SemaphoreOptions) {
+    constructor(semName: string, options?: SemaphoreOptions) {
         super(semName, options);
 
-        this.asyncPosixSem = workerpool.pool(
-            path.join(currentDir, 'workers/semaphore.js'),
+        this._semWorker = workerpool.pool(
+            path.join(BUILD_DIR, 'workers/semaphore.js'),
             {minWorkers: 1, maxWorkers: 1}
         );
     }
 
-    public async waitAsync(): Promise<void> {
-        await this.asyncPosixSem.exec('semProxyCall', ['wait', this.semName, this.options.initialValue]);
+    private async _doAsync(call: string, ...params) {
+        return await this._semWorker.exec(
+            'semInWorker',
+            [call, this.semName, ...params]
+        );
     }
 
-    public async closeAsync(): Promise<void> {
-        await this.asyncPosixSem.exec('semProxyCall', ['close', this.semName, this.options.initialValue]);
+    public async waitAsync(sync: boolean = false): Promise<void> {
+        await this._doAsync('wait', sync);
     }
 
-    public async unlinkAsync(): Promise<void> {
-        await this.asyncPosixSem.exec('semProxyCall', ['unlink', this.semName, this.options.initialValue]);
+    public async closeAsync(sync: boolean = false): Promise<void> {
+        await this._doAsync('close', sync);
+    }
+
+    public async unlinkAsync(sync: boolean = false): Promise<void> {
+        await this._doAsync('unlink', sync);
     }
 
     public async stop(): Promise<void> {
-        await this.asyncPosixSem.terminate();
+        await this._semWorker.terminate();
     }
 }
 

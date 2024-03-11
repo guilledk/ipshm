@@ -7,10 +7,10 @@ export class SharedBufferWriteStream extends Writable {
 
     readonly key: number;
     readonly size: number;
-    private readonly shmBuffer: SharedBuffer;
     readonly bufferOptions: BufferOptions;
 
-    private writeOffset: number;
+    protected readonly shmBuffer: SharedBuffer;
+    protected writeOffset: number;
 
     constructor(key: number, size: number, options?: WritableOptions, bufferOptions?: BufferOptions) {
         super(options);
@@ -26,7 +26,7 @@ export class SharedBufferWriteStream extends Writable {
         this.shmBuffer = new SharedBuffer(key, size, this.bufferOptions);
     }
 
-    _write(chunk: Buffer, encoding: string, callback: (error?: Error | null) => void): void {
+    _write(chunk: Buffer, _encoding: string, callback: (error?: Error | null) => void): void {
         try {
             if (!Buffer.isBuffer(chunk))
                 throw new Error('Chunk must be a Buffer');
@@ -53,10 +53,12 @@ export class SharedBufferWriteStream extends Writable {
         this.writeOffset = offset;
     }
 
-    async writeAsync(chunk: any, encoding: string = 'utf-8'): Promise<void> {
+    async writeAsync(chunk: Buffer | string): Promise<void> {
+        if (typeof chunk === "string")
+            chunk = Buffer.from(new TextEncoder().encode(chunk));
+
         return new Promise((resolve, reject) => {
-            // @ts-ignore
-            this.write(chunk, encoding, async (error) => {
+            this.write(chunk, undefined, async (error) => {
                 if (error) {
                     reject(error);
                 } else {
@@ -75,11 +77,10 @@ export class SharedBufferReadStream extends Readable {
 
     readonly key: number;
     readonly size: number;
-    readonly shmBuffer: SharedBuffer;
     readonly bufferOptions: BufferOptions;
 
-    private readOffset: number;
-
+    protected readonly shmBuffer: SharedBuffer;
+    protected readOffset: number;
 
     constructor(key: number, size: number, options?: ReadableOptions, bufferOptions?: BufferOptions) {
         super(options);

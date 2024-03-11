@@ -13,6 +13,7 @@ export const libc = ffi.Library(null, {
     shmdt: [int, [voidPtr]],
     shmctl: [int, [int, int, voidPtr]],
     sem_open: [voidPtr, ['string', int, 'uint32', 'uint32']],
+    sem_getvalue: [int, [voidPtr, ref.refType(int)]],
     sem_wait: [int, [voidPtr]],
     sem_post: [int, [voidPtr]],
     sem_close: [int, [voidPtr]],

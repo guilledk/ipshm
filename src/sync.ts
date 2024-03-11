@@ -39,6 +39,15 @@ export class FieldManager {
         return this.semaphores.get(key)!; // Non-null assertion since we know it exists
     }
 
+    acquireSync(fieldName: string): AsyncPosixSemaphore {
+        if (!(fieldName in this.config))
+            throw new Error(`Field ${fieldName} not found in configuration`);
+
+        const semaphore = this.getSemaphoreForKey(fieldName);
+        semaphore.wait();
+        return semaphore;
+    }
+
     async acquire(fieldName: string): Promise<AsyncPosixSemaphore> {
         if (!(fieldName in this.config))
             throw new Error(`Field ${fieldName} not found in configuration`);
@@ -65,6 +74,14 @@ export class FieldManager {
         return this.buffer.writeBigUInt64LE(value, this.config[fieldName].offset);
     }
 
+    _getByte(fieldName: string): number {
+        return this.buffer.readUInt8(this.config[fieldName].offset);
+    }
+
+    _setByte(fieldName: string, value: number) {
+        return this.buffer.writeUInt8(value, this.config[fieldName].offset);
+    }
+
     _getSequence(fieldName: string): Buffer {
         const config = this.config[fieldName];
         return this.buffer.subarray(config.offset, config.offset + config.size);
@@ -85,6 +102,13 @@ export class FieldManager {
         return value;
     }
 
+    async getByte(fieldName: string): Promise<number> {
+        const semaphore = await this.acquire(fieldName);
+        const value = this._getByte(fieldName);
+        semaphore.post();
+        return value;
+    }
+
     async getSequence(fieldName: string): Promise<Buffer> {
         const semaphore = await this.acquire(fieldName);
         const value = this._getSequence(fieldName);
@@ -95,6 +119,12 @@ export class FieldManager {
     async setValue(fieldName: string, value: bigint) {
         const semaphore = await this.acquire(fieldName);
         this._setValue(fieldName, value);
+        semaphore.post();
+    }
+
+    async setByte(fieldName: string, value: number) {
+        const semaphore = await this.acquire(fieldName);
+        this._setByte(fieldName, value);
         semaphore.post();
     }
 
@@ -112,6 +142,7 @@ export class FieldManager {
             await semaphore.closeAsync();
             if (unlink)
                 await semaphore.unlinkAsync();
+            await semaphore.stop();
         }
     }
 }

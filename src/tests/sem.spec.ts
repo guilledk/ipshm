@@ -7,32 +7,29 @@ import { describe, it } from 'mocha';
 
 import {AsyncPosixSemaphore, maybeDeleteSemaphore} from '../semaphore.js';
 import workerpool from "workerpool";
+import {BUILD_DIR} from "../utils.js";
+import path from "node:path";
 
 // Semaphore management
 const semaphoreMap = new Map<string, AsyncPosixSemaphore>();
 
-async function semaphoreInSubprocess(semName: string, semCall: string): Promise<void> {
-    // @ts-ignore
-    const { PosixSemaphore } = await import('../../../build/semaphore.js')
-    const sem = new PosixSemaphore('test.' + semName, {create: false});
-
-    if (!(semCall in sem))
-        throw new Error(`PosixSemaphore class does not have a ${semCall} method`);
-
-    sem[semCall]();
-}
 
 function createSemaphore(semName: string, initialValue: number): AsyncPosixSemaphore {
     maybeDeleteSemaphore('test.' + semName);
-    const semaphore = new AsyncPosixSemaphore('test.' + semName, {initialValue, create: true, existOk: false});
+    const semaphore = new AsyncPosixSemaphore('test.' + semName, {initialValue, create: true, existOk: false, permissions: 0o666});
     semaphoreMap.set(semName, semaphore);
     return semaphore;
 }
 
-async function cleanupSemaphores(): Promise<void> {
+async function cleanupSemaphores() {
     for (const semaphore of semaphoreMap.values()) {
-        await semaphore.closeAsync();
-        await semaphore.unlinkAsync();
+        semaphore.close();
+        try {
+            semaphore.unlink();
+        } catch (e) {
+            if (!e.message.includes('Failed to unlink semaphore'))
+                throw e;
+        }
         await semaphore.stop();
     }
     semaphoreMap.clear();
@@ -42,8 +39,15 @@ describe('PosixSemaphore', function () {
     this.timeout(20000);
     let pool;
 
+    const semOnSubprocess = async (semName: string, call: string, ...params) => {
+        return await pool.exec('semInWorker', [call, 'test.' + semName, ...params]);
+    };
+
     before(async () => {
-        pool = workerpool.pool({workerType: "process"});
+        pool = workerpool.pool(
+            path.join(BUILD_DIR, 'workers/semaphore.js'),
+            {workerType: "process"}
+        );
     });
 
     after(async () => {
@@ -73,7 +77,7 @@ describe('PosixSemaphore', function () {
         const semName = 'crossProcess';
         const semaphore = createSemaphore(semName, 0);
         // Start a subprocess that waits on the semaphore
-        const waitPromise = pool.exec(semaphoreInSubprocess, [semName, 'wait']);
+        const waitPromise = semOnSubprocess(semName, 'wait');
 
         // Give the subprocess a moment to start waiting
         await new Promise(resolve => setTimeout(resolve, 1000));
@@ -88,13 +92,13 @@ describe('PosixSemaphore', function () {
     it('should handle semaphore unlink correctly', async function() {
         const semName = 'unlink';
         createSemaphore(semName, 0);
-        await pool.exec(semaphoreInSubprocess, [semName, 'post']);
+        await semOnSubprocess(semName, 'post');
 
         // Unlink the semaphore in a subprocess
-        await pool.exec(semaphoreInSubprocess, [semName, 'unlink']);
+        await semOnSubprocess(semName, 'unlink');
 
         // Attempting to wait on the semaphore after unlink should fail
-        const waitPromise = pool.exec(semaphoreInSubprocess, [semName, 'wait']);
+        const waitPromise = semOnSubprocess(semName, 'wait');
         await expect(waitPromise).to.eventually.be.rejectedWith(Error);
     });
 
@@ -106,11 +110,11 @@ describe('PosixSemaphore', function () {
 
         // Post to semaphore equal to number of subprocesses to ensure all can proceed
         for (let i = 0; i < subprocesses; i++)
-            await pool.exec(semaphoreInSubprocess, [semName, 'post']);
+            await semOnSubprocess(semName, 'post');
 
         // Start multiple subprocesses that all wait on the semaphore
         for (let i = 0; i < subprocesses; i++)
-            promises.push(pool.exec(semaphoreInSubprocess, [semName, 'wait']));
+            promises.push(semOnSubprocess(semName, 'wait'));
 
         // Wait for all subprocesses to complete their wait operation
         await Promise.all(promises).then(() => {
